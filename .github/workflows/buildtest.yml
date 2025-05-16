@@ -19,7 +19,7 @@ jobs:
         uses: armbian/build@prepre
         with:
           armbian_token:     "${{ secrets.GITHUB_TOKEN }}"
-          armbian_release:   "jammy"
+          armbian_release:   "noble"
           armbian_target:    "build"
           armbian_board:     "bananapim5"
 
