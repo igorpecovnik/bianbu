@@ -16,7 +16,7 @@ jobs:
           sudo apt install -y git curl gnupg2 sudo
 
       - name: Run Armbian Build
-        uses: armbian/build@main
+        uses: armbian/build@prepre
         with:
           armbian_token:     "${{ secrets.GITHUB_TOKEN }}"
           armbian_release:   "jammy"
