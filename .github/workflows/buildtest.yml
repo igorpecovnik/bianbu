@@ -1,0 +1,24 @@
+name: Build Armbian
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-armbian:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up build dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y git curl gnupg2 sudo
+
+      - name: Run Armbian Build
+        uses: armbian/build@main
+        with:
+          armbian_token:     "${{ secrets.GITHUB_TOKEN }}"
+          armbian_release:   "jammy"
+          armbian_target:    "build"
+          armbian_board:     "bananapim5"
