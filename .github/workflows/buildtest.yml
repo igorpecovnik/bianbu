@@ -5,7 +5,7 @@ on:
 
 jobs:
   build-armbian:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04 # ubuntu-24.04-arm
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -22,3 +22,4 @@ jobs:
           armbian_release:   "jammy"
           armbian_target:    "build"
           armbian_board:     "bananapim5"
+
