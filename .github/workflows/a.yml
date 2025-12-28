@@ -186,6 +186,17 @@ jobs:
               aptly version && \
               rm -rf /var/lib/apt/lists/*
 
+          # Install appropriate keyring based on container type
+          RUN if grep -q "debian" /etc/os-release; then \
+                apt-get update && \
+                apt-get install -y debian-keyring && \
+                rm -rf /var/lib/apt/lists/*; \
+              elif grep -q "ubuntu" /etc/os-release; then \
+                apt-get update && \
+                apt-get install -y ubuntu-keyring && \
+                rm -rf /var/lib/apt/lists/*; \
+              fi
+
           # Install GitHub CLI
           RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
               dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
@@ -193,6 +204,13 @@ jobs:
               echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list && \
               apt-get update && \
               apt-get install -y gh && \
+              rm -rf /var/lib/apt/lists/*
+
+          # Add Armbian stable repository
+          RUN curl -fsSL http://apt.armbian.com/armbian.key | gpg --dearmor -o /usr/share/keyrings/armbian-archive-keyring.gpg && \
+              chmod go+r /usr/share/keyrings/armbian-archive-keyring.gpg && \
+              echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/armbian-archive-keyring.gpg] http://apt.armbian.com bookworm main" > /etc/apt/sources.list.d/armbian.list && \
+              apt-get update && \
               rm -rf /var/lib/apt/lists/*
 
           WORKDIR /workspace
