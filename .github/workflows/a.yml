@@ -1,0 +1,171 @@
+name: Build Docker Images for External Package Workflow
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      push:
+        description: 'Push images to registry'
+        required: false
+        type: boolean
+        default: false
+      registry:
+        description: 'Docker registry (leave empty for Docker Hub)'
+        required: false
+        type: string
+        default: ''
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  build-images:
+    name: "Build ${{ matrix.release }}-${{ matrix.arch }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Debian images
+          - release: bookworm
+            arch: amd64
+            base_image: debian:bookworm
+          - release: bookworm
+            arch: arm64
+            base_image: debian:bookworm
+          - release: bookworm
+            arch: armhf
+            base_image: debian:bookworm
+          - release: bullseye
+            arch: amd64
+            base_image: debian:bullseye
+          - release: bullseye
+            arch: arm64
+            base_image: debian:bullseye
+
+          # Ubuntu images
+          - release: jammy
+            arch: amd64
+            base_image: ubuntu:jammy
+          - release: jammy
+            arch: arm64
+            base_image: ubuntu:jammy
+          - release: jammy
+            arch: armhf
+            base_image: ubuntu:jammy
+          - release: noble
+            arch: amd64
+            base_image: ubuntu:noble
+          - release: noble
+            arch: arm64
+            base_image: ubuntu:noble
+
+    steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: inputs.push
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Create Dockerfile
+        run: |
+          cat > Dockerfile <<EOF
+          FROM ${{ matrix.base_image }}
+
+          ENV ARCH=${{ matrix.arch }} \\
+              DEBIAN_FRONTEND=noninteractive
+
+          # Install essential packages
+          RUN apt-get update && apt-get install -y \\
+              wget \\
+              gnupg \\
+              dirmngr \\
+              ca-certificates \\
+              unzip \\
+              rsync \\
+              openssh-client \\
+              xz-utils \\
+              bzip2 \\
+              git \\
+              curl \\
+              jq \\
+              sudo \\
+              && rm -rf /var/lib/apt/lists/*
+
+          # Install Aptly
+          RUN wget -qO /tmp/aptly.zip https://github.com/aptly-dev/aptly/releases/download/v1.6.2/aptly_1.6.2_linux_amd64.zip && \\
+              unzip -q /tmp/aptly.zip -d /tmp/aptly && \\
+              install -m 0755 /tmp/aptly/aptly_1.6.2_linux_amd64/aptly /usr/local/bin/aptly && \\
+              rm -rf /tmp/aptly /tmp/aptly.zip && \\
+              aptly version
+
+          # Install GitHub CLI
+          RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \\
+              dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \\
+              chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg && \\
+              echo "deb [arch=\$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list && \\
+              apt-get update && \\
+              apt-get install -y gh && \\
+              rm -rf /var/lib/apt/lists/*
+
+          WORKDIR /workspace
+          CMD ["/bin/bash"]
+          EOF
+
+      - name: Build image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          tags: |
+            ${{ inputs.registry }}armbian/external-builder:${{ matrix.release }}-${{ matrix.arch }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          push: ${{ inputs.push }}
+          load: false
+
+      - name: Image built
+        run: |
+          echo "::notice::Built armbian/external-builder:${{ matrix.release }}-${{ matrix.arch }}"
+          if [ "${{ inputs.push }}" = "true" ]; then
+            echo "::notice::Pushed to registry"
+          fi
+
+  summary:
+    name: "Build Summary"
+    needs: build-images
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Generate summary
+        run: |
+          echo '# Docker Images Built' >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+          echo '| Release | Arch | Image |' >> $GITHUB_STEP_SUMMARY
+          echo '|---------|------|-------|' >> $GITHUB_STEP_SUMMARY
+          echo '| bookworm | amd64 | armbian/external-builder:bookworm-amd64 |' >> $GITHUB_STEP_SUMMARY
+          echo '| bookworm | arm64 | armbian/external-builder:bookworm-arm64 |' >> $GITHUB_STEP_SUMMARY
+          echo '| bookworm | armhf | armbian/external-builder:bookworm-armhf |' >> $GITHUB_STEP_SUMMARY
+          echo '| bullseye | amd64 | armbian/external-builder:bullseye-amd64 |' >> $GITHUB_STEP_SUMMARY
+          echo '| bullseye | arm64 | armbian/external-builder:bullseye-arm64 |' >> $GITHUB_STEP_SUMMARY
+          echo '| jammy | amd64 | armbian/external-builder:jammy-amd64 |' >> $GITHUB_STEP_SUMMARY
+          echo '| jammy | arm64 | armbian/external-builder:jammy-arm64 |' >> $GITHUB_STEP_SUMMARY
+          echo '| jammy | armhf | armbian/external-builder:jammy-armhf |' >> $GITHUB_STEP_SUMMARY
+          echo '| noble | amd64 | armbian/external-builder:noble-amd64 |' >> $GITHUB_STEP_SUMMARY
+          echo '| noble | arm64 | armbian/external-builder:noble-arm64 |' >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.push }}" = "true" ]; then
+            echo '✅ Images pushed to registry' >> $GITHUB_STEP_SUMMARY
+          else
+            echo '⚠️ Images built but not pushed (use push=true input to push)' >> $GITHUB_STEP_SUMMARY
+          fi
