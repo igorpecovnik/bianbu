@@ -104,6 +104,12 @@ jobs:
 
           done
 
+          if [ -z "$MATRIX_CONTENT" ]; then
+            echo "::error::No supported distributions found with valid architectures"
+            echo "matrix={\"include\":[]}" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
           MATRIX="${MATRIX}${MATRIX_CONTENT}]}"
 
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
