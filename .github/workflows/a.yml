@@ -1,24 +1,14 @@
-name: Build Docker Images for External Package Workflow
+name: Build Repository Update Docker Images
 
 on:
   push:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      push:
-        description: 'Push images to registry'
-        required: false
-        type: boolean
-        default: false
-      registry:
-        description: 'Docker registry (leave empty for Docker Hub)'
-        required: false
-        type: string
-        default: ''
 
 env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
 
 jobs:
   build-images:
@@ -69,12 +59,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
-        if: inputs.push
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create Dockerfile
         run: |
@@ -101,10 +91,22 @@ jobs:
               sudo \\
               && rm -rf /var/lib/apt/lists/*
 
-          # Install Aptly
-          RUN wget -qO /tmp/aptly.zip https://github.com/aptly-dev/aptly/releases/download/v1.6.2/aptly_1.6.2_linux_amd64.zip && \\
+          # Install Aptly from GitHub (multi-arch)
+          RUN APTLY_VERSION="1.6.2" && \\
+              APTLY_URL="https://github.com/aptly-dev/aptly/releases/download/v\${APTLY_VERSION}" && \\
+              case "\$(dpkg --print-architecture)" in \\
+                amd64|x86_64) \\
+                  APTLY_ARCH="amd64" ;; \\
+                arm64|aarch64) \\
+                  APTLY_ARCH="arm64" ;; \\
+                armhf|armv7l) \\
+                  APTLY_ARCH="armhf" ;; \\
+                *) \\
+                  echo "Unsupported architecture" && exit 1 ;; \\
+              esac && \\
+              wget -qO /tmp/aptly.zip "\${APTLY_URL}/aptly_\${APTLY_VERSION}_linux_\${APTLY_ARCH}.zip" && \\
               unzip -q /tmp/aptly.zip -d /tmp/aptly && \\
-              install -m 0755 /tmp/aptly/aptly_1.6.2_linux_amd64/aptly /usr/local/bin/aptly && \\
+              install -m 0755 /tmp/aptly/aptly_*_linux_\${APTLY_ARCH}/aptly /usr/local/bin/aptly && \\
               rm -rf /tmp/aptly /tmp/aptly.zip && \\
               aptly version
 
@@ -128,18 +130,16 @@ jobs:
           file: ./Dockerfile
           platforms: linux/${{ matrix.arch }}
           tags: |
-            ${{ inputs.registry }}armbian/external-builder:${{ matrix.release }}-${{ matrix.arch }}
+            ${{ env.REGISTRY }}/armbian/repository-update:${{ matrix.release }}-${{ matrix.arch }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          push: ${{ inputs.push }}
+          push: true
           load: false
 
       - name: Image built
         run: |
-          echo "::notice::Built armbian/external-builder:${{ matrix.release }}-${{ matrix.arch }}"
-          if [ "${{ inputs.push }}" = "true" ]; then
-            echo "::notice::Pushed to registry"
-          fi
+          echo "::notice::Built armbian/repository-update:${{ matrix.release }}-${{ matrix.arch }}"
+          echo "::notice::Pushed to registry"
 
   summary:
     name: "Build Summary"
@@ -153,19 +153,15 @@ jobs:
           echo '' >> $GITHUB_STEP_SUMMARY
           echo '| Release | Arch | Image |' >> $GITHUB_STEP_SUMMARY
           echo '|---------|------|-------|' >> $GITHUB_STEP_SUMMARY
-          echo '| bookworm | amd64 | armbian/external-builder:bookworm-amd64 |' >> $GITHUB_STEP_SUMMARY
-          echo '| bookworm | arm64 | armbian/external-builder:bookworm-arm64 |' >> $GITHUB_STEP_SUMMARY
-          echo '| bookworm | armhf | armbian/external-builder:bookworm-armhf |' >> $GITHUB_STEP_SUMMARY
-          echo '| bullseye | amd64 | armbian/external-builder:bullseye-amd64 |' >> $GITHUB_STEP_SUMMARY
-          echo '| bullseye | arm64 | armbian/external-builder:bullseye-arm64 |' >> $GITHUB_STEP_SUMMARY
-          echo '| jammy | amd64 | armbian/external-builder:jammy-amd64 |' >> $GITHUB_STEP_SUMMARY
-          echo '| jammy | arm64 | armbian/external-builder:jammy-arm64 |' >> $GITHUB_STEP_SUMMARY
-          echo '| jammy | armhf | armbian/external-builder:jammy-armhf |' >> $GITHUB_STEP_SUMMARY
-          echo '| noble | amd64 | armbian/external-builder:noble-amd64 |' >> $GITHUB_STEP_SUMMARY
-          echo '| noble | arm64 | armbian/external-builder:noble-arm64 |' >> $GITHUB_STEP_SUMMARY
+          echo '| bookworm | amd64 | armbian/repository-update:bookworm-amd64 |' >> $GITHUB_STEP_SUMMARY
+          echo '| bookworm | arm64 | armbian/repository-update:bookworm-arm64 |' >> $GITHUB_STEP_SUMMARY
+          echo '| bookworm | armhf | armbian/repository-update:bookworm-armhf |' >> $GITHUB_STEP_SUMMARY
+          echo '| bullseye | amd64 | armbian/repository-update:bullseye-amd64 |' >> $GITHUB_STEP_SUMMARY
+          echo '| bullseye | arm64 | armbian/repository-update:bullseye-arm64 |' >> $GITHUB_STEP_SUMMARY
+          echo '| jammy | amd64 | armbian/repository-update:jammy-amd64 |' >> $GITHUB_STEP_SUMMARY
+          echo '| jammy | arm64 | armbian/repository-update:jammy-arm64 |' >> $GITHUB_STEP_SUMMARY
+          echo '| jammy | armhf | armbian/repository-update:jammy-armhf |' >> $GITHUB_STEP_SUMMARY
+          echo '| noble | amd64 | armbian/repository-update:noble-amd64 |' >> $GITHUB_STEP_SUMMARY
+          echo '| noble | arm64 | armbian/repository-update:noble-arm64 |' >> $GITHUB_STEP_SUMMARY
           echo '' >> $GITHUB_STEP_SUMMARY
-          if [ "${{ inputs.push }}" = "true" ]; then
-            echo '✅ Images pushed to registry' >> $GITHUB_STEP_SUMMARY
-          else
-            echo '⚠️ Images built but not pushed (use push=true input to push)' >> $GITHUB_STEP_SUMMARY
-          fi
+          echo '✅ Images pushed to GitHub Container Registry' >> $GITHUB_STEP_SUMMARY
