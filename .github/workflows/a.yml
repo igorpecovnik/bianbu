@@ -44,26 +44,36 @@ jobs:
             dist_dir=$(dirname "$dist_file")
             release=$(basename "$dist_dir")
 
+            # Get distribution name and family
+            dist_name_file="$dist_dir/name"
+            if [ ! -f "$dist_name_file" ]; then
+              echo "::warning::No name file for $release, skipping"
+              continue
+            fi
+
+            dist_name=$(cat "$dist_name_file" | head -n1 | tr -d ' \n')
+
+            # Determine base image based on distribution name
+            # Format: "Ubuntu noble 24.04", "Debian 12 Bookworm", "Ubuntu resolute 26.04"
+            case "$dist_name" in
+              [Dd]ebian*)
+                base_image="debian:$release"
+                ;;
+              [Uu]buntu*)
+                base_image="ubuntu:$release"
+                ;;
+              *)
+                echo "::warning::Unknown distribution family $dist_name for $release, skipping"
+                continue
+                ;;
+            esac
+
             # Get architectures file
             arch_file="$dist_dir/architectures"
             if [ ! -f "$arch_file" ]; then
               echo "::warning::No architectures file for $release, skipping"
               continue
             fi
-
-            # Determine base image
-            case "$release" in
-              bookworm|bullseye|buster|trixie|sid)
-                base_image="debian:$release"
-                ;;
-              jammy|focal|bionic|noble|mantic|lunar)
-                base_image="ubuntu:$release"
-                ;;
-              *)
-                echo "::warning::Unknown release $release, skipping"
-                continue
-                ;;
-            esac
 
             # Read architectures (comma-separated on one line or one per line)
             arch_list=$(cat "$arch_file" | tr -d ' \n' | tr ',' ' ')
@@ -82,6 +92,9 @@ jobs:
                   ;;
                 armhf)
                   docker_platform="linux/arm/v7"
+                  ;;
+                riscv64)
+                  docker_platform="linux/riscv64"
                   ;;
                 *)
                   echo "::warning::Unknown architecture $arch, skipping"
@@ -235,6 +248,12 @@ jobs:
 
             dist_dir=$(dirname "$dist_file")
             release=$(basename "$dist_dir")
+
+            # Get distribution name and family
+            dist_name_file="$dist_dir/name"
+            if [ ! -f "$dist_name_file" ]; then
+              continue
+            fi
 
             # Get architectures file
             arch_file="$dist_dir/architectures"
