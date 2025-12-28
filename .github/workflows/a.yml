@@ -91,26 +91,12 @@ jobs:
               sudo \\
               && rm -rf /var/lib/apt/lists/*
 
-          # Install Aptly from GitHub (multi-arch)
-          RUN APTLY_VERSION="1.6.2" && \\
-              APTLY_URL="https://github.com/aptly-dev/aptly/releases/download/v\${APTLY_VERSION}" && \\
-              case "\$(dpkg --print-architecture)" in \\
-                amd64|x86_64) \\
-                  APTLY_ARCH="amd64" ;; \\
-                arm64|aarch64) \\
-                  APTLY_ARCH="arm64" ;; \\
-                armhf|armv7l) \\
-                  APTLY_ARCH="armhf" ;; \\
-                *) \\
-                  echo "Unsupported architecture: \$(dpkg --print-architecture)" && exit 1 ;; \\
-              esac && \\
-              echo "Downloading Aptly for \${APTLY_ARCH}..." && \\
-              wget -qO /tmp/aptly.zip "\${APTLY_URL}/aptly_\${APTLY_VERSION}_linux_\${APTLY_ARCH}.zip" || \\
-                (echo "Failed to download Aptly for \${APTLY_ARCH}" && exit 1) && \\
-              unzip -q /tmp/aptly.zip -d /tmp/aptly && \\
-              install -m 0755 /tmp/aptly/aptly_*_linux_\${APTLY_ARCH}/aptly /usr/local/bin/aptly && \\
-              rm -rf /tmp/aptly /tmp/aptly.zip && \\
-              aptly version
+          # Install Aptly from Debian/Ubuntu repositories
+          # (GitHub releases require newer GLIBC than available in older base images)
+          RUN apt-get update && \\
+              apt-get install -y aptly && \\
+              aptly version && \\
+              rm -rf /var/lib/apt/lists/*
 
           # Install GitHub CLI
           RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \\
