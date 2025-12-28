@@ -35,13 +35,9 @@ jobs:
           for dist_file in armbian-build/config/distributions/*/support; do
             [ -f "$dist_file" ] || continue
 
-            # Skip EOS distributions
-            if grep -q "eos" "$dist_file"; then
-              continue
-            fi
-
-            # Check if distribution is supported
-            if ! grep -qvE '^(#|$)' "$dist_file"; then
+            # Check if distribution is marked as "supported" (not "eos" or unsupported)
+            if ! grep -q "supported" "$dist_file"; then
+              echo "::debug::Skipping $(basename $(dirname $dist_file)) - not marked as supported"
               continue
             fi
 
@@ -75,12 +71,29 @@ jobs:
               [[ "$arch" =~ ^#.*$ ]] && continue
               [ -z "$arch" ] && continue
 
+              # Map Armbian architecture to Docker platform
+              case "$arch" in
+                amd64)
+                  docker_platform="linux/amd64"
+                  ;;
+                arm64)
+                  docker_platform="linux/arm64"
+                  ;;
+                armhf)
+                  docker_platform="linux/arm/v7"
+                  ;;
+                *)
+                  echo "::warning::Unknown architecture $arch, skipping"
+                  continue
+                  ;;
+              esac
+
               # Add to matrix
               if [ -n "$MATRIX_CONTENT" ]; then
                 MATRIX_CONTENT+=","
               fi
 
-              MATRIX_CONTENT+="{\"release\":\"$release\",\"arch\":\"$arch\",\"base_image\":\"$base_image\"}"
+              MATRIX_CONTENT+="{\"release\":\"$release\",\"arch\":\"$arch\",\"docker_platform\":\"$docker_platform\",\"base_image\":\"$base_image\"}"
 
               # Add to images list for summary
               if [ -n "$IMAGES" ]; then
@@ -171,7 +184,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          platforms: linux/${{ matrix.arch }}
+          platforms: ${{ matrix.docker_platform }}
           tags: |
             ${{ env.REGISTRY }}/armbian/repository-update:${{ matrix.release }}-${{ matrix.arch }}
           cache-from: type=gha
@@ -208,13 +221,8 @@ jobs:
           for dist_file in armbian-build/config/distributions/*/support; do
             [ -f "$dist_file" ] || continue
 
-            # Skip EOS distributions
-            if grep -q "eos" "$dist_file"; then
-              continue
-            fi
-
-            # Check if distribution is supported
-            if ! grep -qvE '^(#|$)' "$dist_file"; then
+            # Check if distribution is marked as "supported"
+            if ! grep -q "supported" "$dist_file"; then
               continue
             fi
 
