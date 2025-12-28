@@ -11,46 +11,101 @@ env:
   REGISTRY: ghcr.io/${{ github.repository_owner }}
 
 jobs:
+  setup-matrix:
+    name: "Generate build matrix"
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate-matrix.outputs.matrix }}
+      images: ${{ steps.generate-matrix.outputs.images }}
+    steps:
+      - name: Checkout Armbian build framework
+        uses: actions/checkout@v4
+        with:
+          repository: armbian/build
+          ref: main
+          path: armbian-build
+
+      - name: Generate matrix from distributions
+        id: generate-matrix
+        run: |
+          MATRIX="{\"include\":["
+          IMAGES=""
+
+          # Process each distribution
+          for dist_file in armbian-build/config/distributions/*/support; do
+            [ -f "$dist_file" ] || continue
+
+            # Skip EOS distributions
+            if grep -q "eos" "$dist_file"; then
+              continue
+            fi
+
+            # Check if distribution is supported
+            if ! grep -qvE '^(#|$)' "$dist_file"; then
+              continue
+            fi
+
+            dist_dir=$(dirname "$dist_file")
+            release=$(basename "$dist_dir")
+
+            # Get architectures file
+            arch_file="$dist_dir/architectures"
+            if [ ! -f "$arch_file" ]; then
+              echo "::warning::No architectures file for $release, skipping"
+              continue
+            fi
+
+            # Determine base image
+            case "$release" in
+              bookworm|bullseye|buster|trixie|sid)
+                base_image="debian:$release"
+                ;;
+              jammy|focal|bionic|noble|mantic|lunar)
+                base_image="ubuntu:$release"
+                ;;
+              *)
+                echo "::warning::Unknown release $release, skipping"
+                continue
+                ;;
+            esac
+
+            # Process each architecture
+            while read -r arch || [ -n "$arch" ]; do
+              # Skip comments and empty lines
+              [[ "$arch" =~ ^#.*$ ]] && continue
+              [ -z "$arch" ] && continue
+
+              # Add to matrix
+              if [ -n "$MATRIX_CONTENT" ]; then
+                MATRIX_CONTENT+=","
+              fi
+
+              MATRIX_CONTENT+="{\"release\":\"$release\",\"arch\":\"$arch\",\"base_image\":\"$base_image\"}"
+
+              # Add to images list for summary
+              if [ -n "$IMAGES" ]; then
+                IMAGES+=", "
+              fi
+              IMAGES+="$release-$arch"
+            done < "$arch_file"
+
+          done
+
+          MATRIX="${MATRIX}${MATRIX_CONTENT}]}"
+
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          echo "images=$IMAGES" >> $GITHUB_OUTPUT
+
+          echo "::notice::Generated matrix for $IMAGES"
+          echo "::debug::$MATRIX"
+
   build-images:
     name: "Build ${{ matrix.release }}-${{ matrix.arch }}"
+    needs: setup-matrix
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          # Debian images
-          - release: bookworm
-            arch: amd64
-            base_image: debian:bookworm
-          - release: bookworm
-            arch: arm64
-            base_image: debian:bookworm
-          - release: bookworm
-            arch: armhf
-            base_image: debian:bookworm
-          - release: bullseye
-            arch: amd64
-            base_image: debian:bullseye
-          - release: bullseye
-            arch: arm64
-            base_image: debian:bullseye
-
-          # Ubuntu images
-          - release: jammy
-            arch: amd64
-            base_image: ubuntu:jammy
-          - release: jammy
-            arch: arm64
-            base_image: ubuntu:jammy
-          - release: jammy
-            arch: armhf
-            base_image: ubuntu:jammy
-          - release: noble
-            arch: amd64
-            base_image: ubuntu:noble
-          - release: noble
-            arch: arm64
-            base_image: ubuntu:noble
+      matrix: ${{ fromJson(needs.setup-matrix.outputs.matrix) }}
 
     steps:
       - name: Set up QEMU
@@ -75,36 +130,36 @@ jobs:
               DEBIAN_FRONTEND=noninteractive
 
           # Install essential packages
-          RUN apt-get update && apt-get install -y \\
-              wget \\
-              gnupg \\
-              dirmngr \\
-              ca-certificates \\
-              unzip \\
-              rsync \\
-              openssh-client \\
-              xz-utils \\
-              bzip2 \\
-              git \\
-              curl \\
-              jq \\
-              sudo \\
+          RUN apt-get update && apt-get install -y \\\\
+              wget \\\\
+              gnupg \\\\
+              dirmngr \\\\
+              ca-certificates \\\\
+              unzip \\\\
+              rsync \\\\
+              openssh-client \\\\
+              xz-utils \\\\
+              bzip2 \\\\
+              git \\\\
+              curl \\\\
+              jq \\\\
+              sudo \\\\
               && rm -rf /var/lib/apt/lists/*
 
           # Install Aptly from Debian/Ubuntu repositories
           # (GitHub releases require newer GLIBC than available in older base images)
-          RUN apt-get update && \\
-              apt-get install -y aptly && \\
-              aptly version && \\
+          RUN apt-get update && \\\\
+              apt-get install -y aptly && \\\\
+              aptly version && \\\\
               rm -rf /var/lib/apt/lists/*
 
           # Install GitHub CLI
-          RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \\
-              dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \\
-              chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg && \\
-              echo "deb [arch=\$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list && \\
-              apt-get update && \\
-              apt-get install -y gh && \\
+          RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \\\\
+              dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \\\\
+              chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg && \\\\
+              echo "deb [arch=\\\$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list && \\\\
+              apt-get update && \\\\
+              apt-get install -y gh && \\\\
               rm -rf /var/lib/apt/lists/*
 
           WORKDIR /workspace
@@ -131,7 +186,7 @@ jobs:
 
   summary:
     name: "Build Summary"
-    needs: build-images
+    needs: [setup-matrix, build-images]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -141,15 +196,11 @@ jobs:
           echo '' >> $GITHUB_STEP_SUMMARY
           echo '| Release | Arch | Image |' >> $GITHUB_STEP_SUMMARY
           echo '|---------|------|-------|' >> $GITHUB_STEP_SUMMARY
-          echo '| bookworm | amd64 | armbian/repository-update:bookworm-amd64 |' >> $GITHUB_STEP_SUMMARY
-          echo '| bookworm | arm64 | armbian/repository-update:bookworm-arm64 |' >> $GITHUB_STEP_SUMMARY
-          echo '| bookworm | armhf | armbian/repository-update:bookworm-armhf |' >> $GITHUB_STEP_SUMMARY
-          echo '| bullseye | amd64 | armbian/repository-update:bullseye-amd64 |' >> $GITHUB_STEP_SUMMARY
-          echo '| bullseye | arm64 | armbian/repository-update:bullseye-arm64 |' >> $GITHUB_STEP_SUMMARY
-          echo '| jammy | amd64 | armbian/repository-update:jammy-amd64 |' >> $GITHUB_STEP_SUMMARY
-          echo '| jammy | arm64 | armbian/repository-update:jammy-arm64 |' >> $GITHUB_STEP_SUMMARY
-          echo '| jammy | armhf | armbian/repository-update:jammy-armhf |' >> $GITHUB_STEP_SUMMARY
-          echo '| noble | amd64 | armbian/repository-update:noble-amd64 |' >> $GITHUB_STEP_SUMMARY
-          echo '| noble | arm64 | armbian/repository-update:noble-arm64 |' >> $GITHUB_STEP_SUMMARY
+
+          # Get all unique release-arch combinations
+          ${{ needs.setup-matrix.outputs.matrix }} | jq -r '.include[] | "\(.release)|\(.arch)|armbian/repository-update:\(.release)-\(.arch)"' | while IFS='|' read -r release arch image; do
+            echo "| $release | $arch | $image |" >> $GITHUB_STEP_SUMMARY
+          done
+
           echo '' >> $GITHUB_STEP_SUMMARY
           echo '✅ Images pushed to GitHub Container Registry' >> $GITHUB_STEP_SUMMARY
