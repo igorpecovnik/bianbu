@@ -123,48 +123,48 @@ jobs:
 
       - name: Create Dockerfile
         run: |
-          cat > Dockerfile <<EOF
+          cat > Dockerfile <<'DOCKEREOF'
           FROM ${{ matrix.base_image }}
 
-          ENV ARCH=${{ matrix.arch }} \\
+          ENV ARCH=${{ matrix.arch }} \
               DEBIAN_FRONTEND=noninteractive
 
           # Install essential packages
-          RUN apt-get update && apt-get install -y \\\\
-              wget \\\\
-              gnupg \\\\
-              dirmngr \\\\
-              ca-certificates \\\\
-              unzip \\\\
-              rsync \\\\
-              openssh-client \\\\
-              xz-utils \\\\
-              bzip2 \\\\
-              git \\\\
-              curl \\\\
-              jq \\\\
-              sudo \\\\
+          RUN apt-get update && apt-get install -y \
+              wget \
+              gnupg \
+              dirmngr \
+              ca-certificates \
+              unzip \
+              rsync \
+              openssh-client \
+              xz-utils \
+              bzip2 \
+              git \
+              curl \
+              jq \
+              sudo \
               && rm -rf /var/lib/apt/lists/*
 
           # Install Aptly from Debian/Ubuntu repositories
           # (GitHub releases require newer GLIBC than available in older base images)
-          RUN apt-get update && \\\\
-              apt-get install -y aptly && \\\\
-              aptly version && \\\\
+          RUN apt-get update && \
+              apt-get install -y aptly && \
+              aptly version && \
               rm -rf /var/lib/apt/lists/*
 
           # Install GitHub CLI
-          RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \\\\
-              dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \\\\
-              chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg && \\\\
-              echo "deb [arch=\\\$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list && \\\\
-              apt-get update && \\\\
-              apt-get install -y gh && \\\\
+          RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
+              dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
+              chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg && \
+              echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list && \
+              apt-get update && \
+              apt-get install -y gh && \
               rm -rf /var/lib/apt/lists/*
 
           WORKDIR /workspace
           CMD ["/bin/bash"]
-          EOF
+          DOCKEREOF
 
       - name: Build image
         uses: docker/build-push-action@v5
@@ -190,6 +190,13 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     steps:
+      - name: Checkout Armbian build framework
+        uses: actions/checkout@v4
+        with:
+          repository: armbian/build
+          ref: main
+          path: armbian-build
+
       - name: Generate summary
         run: |
           echo '# Docker Images Built' >> $GITHUB_STEP_SUMMARY
@@ -197,9 +204,38 @@ jobs:
           echo '| Release | Arch | Image |' >> $GITHUB_STEP_SUMMARY
           echo '|---------|------|-------|' >> $GITHUB_STEP_SUMMARY
 
-          # Get all unique release-arch combinations
-          ${{ needs.setup-matrix.outputs.matrix }} | jq -r '.include[] | "\(.release)|\(.arch)|armbian/repository-update:\(.release)-\(.arch)"' | while IFS='|' read -r release arch image; do
-            echo "| $release | $arch | $image |" >> $GITHUB_STEP_SUMMARY
+          # Process each distribution
+          for dist_file in armbian-build/config/distributions/*/support; do
+            [ -f "$dist_file" ] || continue
+
+            # Skip EOS distributions
+            if grep -q "eos" "$dist_file"; then
+              continue
+            fi
+
+            # Check if distribution is supported
+            if ! grep -qvE '^(#|$)' "$dist_file"; then
+              continue
+            fi
+
+            dist_dir=$(dirname "$dist_file")
+            release=$(basename "$dist_dir")
+
+            # Get architectures file
+            arch_file="$dist_dir/architectures"
+            if [ ! -f "$arch_file" ]; then
+              continue
+            fi
+
+            # Process each architecture
+            while read -r arch || [ -n "$arch" ]; do
+              # Skip comments and empty lines
+              [[ "$arch" =~ ^#.*$ ]] && continue
+              [ -z "$arch" ] && continue
+
+              image="armbian/repository-update:${release}-${arch}"
+              echo "| $release | $arch | $image |" >> $GITHUB_STEP_SUMMARY
+            done < "$arch_file"
           done
 
           echo '' >> $GITHUB_STEP_SUMMARY
