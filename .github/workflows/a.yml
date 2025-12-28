@@ -65,8 +65,9 @@ jobs:
                 ;;
             esac
 
-            # Process each architecture
-            while read -r arch || [ -n "$arch" ]; do
+            # Read architectures (comma-separated on one line or one per line)
+            arch_list=$(cat "$arch_file" | tr -d ' \n' | tr ',' ' ')
+            for arch in $arch_list; do
               # Skip comments and empty lines
               [[ "$arch" =~ ^#.*$ ]] && continue
               [ -z "$arch" ] && continue
@@ -100,7 +101,7 @@ jobs:
                 IMAGES+=", "
               fi
               IMAGES+="$release-$arch"
-            done < "$arch_file"
+            done
 
           done
 
@@ -241,15 +242,16 @@ jobs:
               continue
             fi
 
-            # Process each architecture
-            while read -r arch || [ -n "$arch" ]; do
+            # Read architectures (comma-separated on one line or one per line)
+            arch_list=$(cat "$arch_file" | tr -d ' \n' | tr ',' ' ')
+            for arch in $arch_list; do
               # Skip comments and empty lines
               [[ "$arch" =~ ^#.*$ ]] && continue
               [ -z "$arch" ] && continue
 
               image="armbian/repository-update:${release}-${arch}"
               echo "| $release | $arch | $image |" >> $GITHUB_STEP_SUMMARY
-            done < "$arch_file"
+            done
           done
 
           echo '' >> $GITHUB_STEP_SUMMARY
