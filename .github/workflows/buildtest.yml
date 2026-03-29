@@ -9,6 +9,6 @@ jobs:
       - uses: armbian/build@actions
         with:
           armbian_token: ${{ secrets.GITHUB_TOKEN }}
-          armbian_board: "uefi-x86"
+          armbian_board: "bananapif3"
           armbian_target: "build"
           armbian_runner_clean: "yes"
